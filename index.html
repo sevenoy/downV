@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
+    <title>抖音视频下载器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #ffffff;
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 30px 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #666;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus {
+            border-color: #007AFF;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px 20px;
+            background: #007AFF;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.1s;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        button:hover {
+            background: #0056CC;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .secondary-btn {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .secondary-btn:hover {
+            background: #e0e0e0;
+        }
+
+        .video-container {
+            margin-top: 20px;
+            display: none;
+            text-align: center;
+        }
+
+        .video-container.active {
+            display: block;
+        }
+
+        video {
+            width: 100%;
+            max-width: 100%;
+            border-radius: 8px;
+            background: #000;
+        }
+
+        .tips {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            font-size: 14px;
+            color: #666;
+            line-height: 1.8;
+        }
+
+        .tips h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .tips ul {
+            margin-left: 20px;
+        }
+
+        .tips li {
+            margin-bottom: 8px;
+        }
+
+        .status {
+            text-align: center;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 6px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            display: block;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            display: block;
+        }
+
+        .status.loading {
+            background: #d1ecf1;
+            color: #0c5460;
+            display: block;
+        }
+
+        .download-hint {
+            margin-top: 15px;
+            padding: 15px;
+            background: #e3f2fd;
+            border-radius: 8px;
+            text-align: center;
+            color: #1976d2;
+            font-size: 14px;
+            display: none;
+        }
+
+        .download-hint.active {
+            display: block;
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 10px;
+            }
+
+            .container {
+                padding: 20px 15px;
+            }
+
+            h1 {
+                font-size: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 抖音视频下载器</h1>
+        
+        <div class="input-group">
+            <label for="videoUrl">视频链接：</label>
+            <input type="text" id="videoUrl" placeholder="请输入抖音视频分享链接" value="https://www.doubao.com/video-sharing?share_id=31687529650354434&source_type=mobile&video_id=v0d69cg10004d4krcanog65pr74mc8gg&share_scene=video_viewer">
+        </div>
+
+        <div class="button-group">
+            <button id="fetchBtn" onclick="fetchVideo()">获取视频</button>
+            <button id="clearBtn" class="secondary-btn" onclick="clearAll()">清空</button>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <div id="videoContainer" class="video-container">
+            <video id="videoPlayer" controls playsinline webkit-playsinline></video>
+            <div class="button-group" style="margin-top: 15px;">
+                <button id="downloadBtn" onclick="downloadVideo()" style="display: none;">下载视频</button>
+            </div>
+            <div class="download-hint" id="downloadHint">
+                💡 在视频上长按，选择"存储视频"即可保存到相册<br>
+                或者点击上方的"下载视频"按钮
+            </div>
+        </div>
+
+        <div class="tips">
+            <h3>使用说明：</h3>
+            <ul>
+                <li>粘贴抖音视频分享链接到上方输入框</li>
+                <li>点击"获取视频"按钮</li>
+                <li>视频加载后，长按视频选择"存储视频"保存到相册</li>
+                <li>或者点击视频播放后，在控制栏中点击下载图标</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        let videoUrl = '';
+        let videoElement = null;
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            videoElement = document.getElementById('videoPlayer');
+            
+            // 支持回车键获取视频
+            document.getElementById('videoUrl').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    fetchVideo();
+                }
+            });
+
+            // 监听视频加载完成
+            videoElement.addEventListener('loadeddata', function() {
+                showStatus('视频加载成功！', 'success');
+                document.getElementById('downloadHint').classList.add('active');
+            });
+
+            // 监听视频错误
+            videoElement.addEventListener('error', function() {
+                showStatus('视频加载失败，请检查链接是否正确', 'error');
+            });
+        });
+
+        // 显示状态信息
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + type;
+            setTimeout(() => {
+                if (type !== 'loading') {
+                    statusEl.className = 'status';
+                }
+            }, 5000);
+        }
+
+        // 获取视频
+        async function fetchVideo() {
+            const inputUrl = document.getElementById('videoUrl').value.trim();
+            if (!inputUrl) {
+                showStatus('请输入视频链接', 'error');
+                return;
+            }
+
+            showStatus('正在获取视频，请稍候...', 'loading');
+            document.getElementById('fetchBtn').disabled = true;
+
+            try {
+                // 提取视频ID
+                const videoId = extractVideoId(inputUrl);
+                if (!videoId) {
+                    showStatus('无法从链接中提取视频ID，请检查链接格式', 'error');
+                    document.getElementById('fetchBtn').disabled = false;
+                    return;
+                }
+
+                // 尝试多种方式获取视频
+                let videoSrc = await extractVideoUrl(inputUrl, videoId);
+                
+                if (videoSrc) {
+                    displayVideo(videoSrc);
+                } else {
+                    // 备用方案：尝试直接使用链接
+                    showStatus('无法自动获取视频，尝试备用方案...', 'loading');
+                    
+                    // 尝试直接使用原始链接作为视频源（某些情况下可能有效）
+                    setTimeout(async () => {
+                        try {
+                            // 尝试直接打开视频页面并提取
+                            const testVideo = await testVideoUrl(inputUrl);
+                            if (testVideo) {
+                                displayVideo(testVideo);
+                            } else {
+                                showStatus('无法获取视频。请尝试：1) 复制视频链接在浏览器中打开 2) 长按视频保存', 'error');
+                                document.getElementById('fetchBtn').disabled = false;
+                                
+                                // 提供打开链接的选项
+                                setTimeout(() => {
+                                    const openLink = confirm('是否在新窗口打开视频链接？\n打开后您可以尝试长按视频保存到相册。');
+                                    if (openLink) {
+                                        window.open(inputUrl, '_blank');
+                                    }
+                                }, 1500);
+                            }
+                        } catch (e) {
+                            showStatus('获取视频失败，请检查网络连接或稍后重试', 'error');
+                            document.getElementById('fetchBtn').disabled = false;
+                        }
+                    }, 500);
+                }
+            } catch (error) {
+                console.error('获取视频失败:', error);
+                showStatus('获取视频时出错：' + error.message, 'error');
+                document.getElementById('fetchBtn').disabled = false;
+            }
+        }
+
+        // 提取视频URL（尝试从链接中提取）
+        async function extractVideoUrl(url, videoId) {
+            // 方法1：尝试使用公开的API服务（无需密钥的免费API）
+            try {
+                // 使用免费的抖音视频解析API
+                const apiUrls = [
+                    `https://api.douyin.wtf/api?url=${encodeURIComponent(url)}`,
+                    `https://www.iesdouyin.com/aweme/v1/web/aweme/detail/?aweme_id=${videoId}`,
+                ];
+                
+                for (let apiUrl of apiUrls) {
+                    try {
+                        const response = await fetch(apiUrl, {
+                            method: 'GET',
+                            headers: {
+                                'Accept': 'application/json, text/plain, */*',
+                                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
+                                'Referer': 'https://www.doubao.com/'
+                            }
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            console.log('API响应:', data);
+                            
+                            // 尝试从不同格式的响应中提取视频URL
+                            let videoUrl = null;
+                            
+                            // 格式1: { data: { video: { play_addr: { url_list: [...] } } } }
+                            if (data.data && data.data.video && data.data.video.play_addr) {
+                                const urlList = data.data.video.play_addr.url_list;
+                                if (urlList && urlList.length > 0) {
+                                    videoUrl = urlList[0];
+                                }
+                            }
+                            
+                            // 格式1.1: { aweme_detail: { video: { play_addr: { url_list: [...] } } } }
+                            if (!videoUrl && data.aweme_detail && data.aweme_detail.video && data.aweme_detail.video.play_addr) {
+                                const urlList = data.aweme_detail.video.play_addr.url_list;
+                                if (urlList && urlList.length > 0) {
+                                    videoUrl = urlList[0];
+                                }
+                            }
+                            
+                            // 格式2: { video_url: "..." }
+                            if (!videoUrl && data.video_url) {
+                                videoUrl = data.video_url;
+                            }
+                            
+                            // 格式3: { data: { play: "..." } }
+                            if (!videoUrl && data.data && data.data.play) {
+                                videoUrl = data.data.play;
+                            }
+                            
+                            // 格式4: { url: "..." }
+                            if (!videoUrl && data.url) {
+                                videoUrl = data.url;
+                            }
+                            
+                            // 格式5: 从JSON字符串中解析
+                            if (!videoUrl && data.play_url) {
+                                videoUrl = data.play_url;
+                            }
+                            
+                            // 格式6: 嵌套在data中
+                            if (!videoUrl && data.data && data.data.url) {
+                                videoUrl = data.data.url;
+                            }
+                            
+                            if (videoUrl) {
+                                // 清理URL
+                                videoUrl = videoUrl.replace(/\\u002F/g, '/').replace(/\\\//g, '/').replace(/\\/g, '');
+                                if (!videoUrl.startsWith('http')) {
+                                    videoUrl = 'https:' + videoUrl;
+                                }
+                                return videoUrl;
+                            }
+                        }
+                    } catch (e) {
+                        console.log('API请求失败，尝试下一个:', e);
+                        continue;
+                    }
+                }
+            } catch (e) {
+                console.log('API方法全部失败:', e);
+            }
+
+            // 方法2：尝试使用CORS代理获取页面内容
+            try {
+                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+                const response = await fetch(proxyUrl);
+                const data = await response.json();
+                
+                if (data.contents) {
+                    const html = data.contents;
+                    
+                    // 尝试从HTML中提取视频URL
+                    const patterns = [
+                        /playAddr["\s:]+["']([^"']+)["']/i,
+                        /video["\s:]+["']([^"']+)["']/i,
+                        /src=["']([^"']*\.mp4[^"']*)["']/i,
+                        /url["\s:]+["']([^"']*\.mp4[^"']*)["']/i,
+                        /"play_addr":\s*\{[^}]*"url_list":\s*\["([^"]+)"/i
+                    ];
+                    
+                    for (let pattern of patterns) {
+                        const match = html.match(pattern);
+                        if (match && match[1]) {
+                            let videoUrl = match[1].replace(/\\u002F/g, '/').replace(/\\\//g, '/');
+                            if (!videoUrl.startsWith('http')) {
+                                videoUrl = 'https:' + videoUrl;
+                            }
+                            return videoUrl;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log('代理方法失败:', e);
+            }
+            
+            return null;
+        }
+
+        // 测试视频URL是否可用
+        async function testVideoUrl(url) {
+            // 尝试几种常见的视频URL模式
+            const possibleUrls = [
+                url.replace('video-sharing', 'video'),
+                url + '&format=mp4'
+            ];
+            
+            for (let testUrl of possibleUrls) {
+                try {
+                    const response = await fetch(testUrl, { method: 'HEAD' });
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('video')) {
+                        return testUrl;
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+            return null;
+        }
+
+        // 从URL中提取视频ID
+        function extractVideoId(url) {
+            // 尝试多种格式
+            // 格式1: video_id=xxx
+            let match = url.match(/video_id=([^&]+)/);
+            if (match) {
+                let id = match[1];
+                // 如果ID中包含v开头，提取v后面的部分
+                if (id.startsWith('v')) {
+                    return id;
+                }
+                return id;
+            }
+            
+            // 格式2: /video/数字
+            match = url.match(/\/video\/(\d+)/);
+            if (match) return match[1];
+            
+            // 格式3: v开头的ID
+            match = url.match(/v([a-zA-Z0-9]{20,})/);
+            if (match) return 'v' + match[1];
+            
+            // 格式4: 直接从URL中查找v开头的ID模式
+            match = url.match(/(v\d+[a-z0-9]{15,})/);
+            if (match) return match[1];
+            
+            return null;
+        }
+
+        // 显示视频
+        function displayVideo(src) {
+            videoUrl = src;
+            videoElement.src = src;
+            videoElement.load();
+            document.getElementById('videoContainer').classList.add('active');
+            document.getElementById('downloadBtn').style.display = 'block';
+            document.getElementById('fetchBtn').disabled = false;
+            
+            // 保存视频URL供下载使用
+            videoElement.setAttribute('data-video-url', src);
+        }
+
+        // 下载视频
+        async function downloadVideo() {
+            const url = videoElement.getAttribute('data-video-url') || videoElement.src;
+            if (!url) {
+                showStatus('没有可下载的视频', 'error');
+                return;
+            }
+
+            showStatus('正在下载视频，请稍候...', 'loading');
+            document.getElementById('downloadBtn').disabled = true;
+
+            try {
+                // 检测是否为iOS设备
+                const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+                
+                if (isIOS) {
+                    // iOS设备使用特殊方法
+                    downloadVideoIOS(url);
+                } else {
+                    // 其他设备使用标准下载方法
+                    await downloadVideoStandard(url);
+                }
+            } catch (error) {
+                console.error('下载失败:', error);
+                showStatus('下载失败：' + error.message, 'error');
+                document.getElementById('downloadBtn').disabled = false;
+            }
+        }
+
+        // iOS下载方法
+        function downloadVideoIOS(url) {
+            try {
+                // 方法1：创建隐藏的iframe来触发下载
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = url;
+                document.body.appendChild(iframe);
+                
+                // 方法2：创建a标签并尝试下载
+                const a = document.createElement('a');
+                a.href = url;
+                a.target = '_blank';
+                a.download = 'douyin-video.mp4';
+                a.rel = 'noopener noreferrer';
+                
+                // 触发点击
+                document.body.appendChild(a);
+                a.click();
+                
+                // 清理
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    document.body.removeChild(iframe);
+                    showStatus('正在下载...请在浏览器中确认下载', 'success');
+                    document.getElementById('downloadBtn').disabled = false;
+                }, 1000);
+                
+                // iOS提示
+                setTimeout(() => {
+                    showStatus('如果下载未开始，请长按视频选择"存储视频"', 'success');
+                }, 2000);
+            } catch (error) {
+                showStatus('iOS下载需要手动操作：请长按视频选择"存储视频"', 'error');
+                document.getElementById('downloadBtn').disabled = false;
+            }
+        }
+
+        // 标准下载方法
+        async function downloadVideoStandard(url) {
+            try {
+                // 使用fetch获取视频并创建blob
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Referer': 'https://www.doubao.com/',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('获取视频数据失败');
+                }
+                
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                
+                // 创建下载链接
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = 'douyin-video-' + Date.now() + '.mp4';
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                
+                // 触发下载
+                a.click();
+                
+                // 清理
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(blobUrl);
+                    showStatus('下载完成！', 'success');
+                    document.getElementById('downloadBtn').disabled = false;
+                }, 1000);
+            } catch (error) {
+                // 如果fetch失败，尝试直接打开链接
+                console.log('Fetch失败，尝试直接下载:', error);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'douyin-video.mp4';
+                a.target = '_blank';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    showStatus('请在新窗口保存视频', 'success');
+                    document.getElementById('downloadBtn').disabled = false;
+                }, 1000);
+            }
+        }
+
+        // 清空所有内容
+        function clearAll() {
+            document.getElementById('videoUrl').value = '';
+            document.getElementById('videoContainer').classList.remove('active');
+            document.getElementById('status').className = 'status';
+            document.getElementById('downloadHint').classList.remove('active');
+            document.getElementById('downloadBtn').style.display = 'none';
+            videoUrl = '';
+            if (videoElement) {
+                videoElement.src = '';
+                videoElement.removeAttribute('data-video-url');
+            }
+        }
+
+        // 处理视频播放器事件
+        videoElement.addEventListener('contextmenu', function(e) {
+            // 允许右键菜单（在某些浏览器中可能需要）
+            return true;
+        });
+
+        // 添加触摸事件处理（iOS）
+        if ('ontouchstart' in window) {
+            videoElement.addEventListener('touchstart', function() {
+                // 确保视频可以交互
+            }, { passive: true });
+        }
+    </script>
+</body>
+</html>
