@@ -209,6 +209,11 @@
             h1 {
                 font-size: 20px;
             }
+
+            #videoFrame {
+                height: 60vh;
+                min-height: 400px;
+            }
         }
     </style>
 </head>
@@ -230,6 +235,7 @@
 
         <div id="videoContainer" class="video-container">
             <video id="videoPlayer" controls playsinline webkit-playsinline></video>
+            <iframe id="videoFrame" style="display: none; width: 100%; min-height: 500px; height: 70vh; max-height: 800px; border: none; border-radius: 8px; background: #000;"></iframe>
             <div class="button-group" style="margin-top: 15px;">
                 <button id="downloadBtn" onclick="downloadVideo()" style="display: none;">下载视频</button>
             </div>
@@ -317,32 +323,10 @@
                 if (videoSrc) {
                     displayVideo(videoSrc);
                 } else {
-                    // 备用方案：尝试直接使用链接
-                    showStatus('无法自动获取视频，尝试备用方案...', 'loading');
-                    
-                    // 尝试直接使用原始链接作为视频源（某些情况下可能有效）
-                    setTimeout(async () => {
-                        try {
-                            // 尝试直接打开视频页面并提取
-                            const testVideo = await testVideoUrl(inputUrl);
-                            if (testVideo) {
-                                displayVideo(testVideo);
-                            } else {
-                                showStatus('无法获取视频。请尝试：1) 复制视频链接在浏览器中打开 2) 长按视频保存', 'error');
-                                document.getElementById('fetchBtn').disabled = false;
-                                
-                                // 提供打开链接的选项
-                                setTimeout(() => {
-                                    const openLink = confirm('是否在新窗口打开视频链接？\n打开后您可以尝试长按视频保存到相册。');
-                                    if (openLink) {
-                                        window.open(inputUrl, '_blank');
-                                    }
-                                }, 1500);
-                            }
-                        } catch (e) {
-                            showStatus('获取视频失败，请检查网络连接或稍后重试', 'error');
-                            document.getElementById('fetchBtn').disabled = false;
-                        }
+                    // 备用方案：直接嵌入原链接页面
+                    showStatus('无法自动获取视频，使用备用方案...', 'loading');
+                    setTimeout(() => {
+                        displayVideoPage(inputUrl);
                     }, 500);
                 }
             } catch (error) {
@@ -354,12 +338,100 @@
 
         // 提取视频URL（尝试从链接中提取）
         async function extractVideoUrl(url, videoId) {
-            // 方法1：尝试使用公开的API服务（无需密钥的免费API）
+            console.log('开始提取视频URL, videoId:', videoId);
+            
+            // 方法1：尝试使用多个CORS代理获取页面内容并解析
+            const proxyServices = [
+                `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+                `https://cors-anywhere.herokuapp.com/${url}`,
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+            ];
+            
+            for (let proxyUrl of proxyServices) {
+                try {
+                    console.log('尝试代理:', proxyUrl);
+                    const response = await fetch(proxyUrl, {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'text/html,application/json,*/*',
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        let html = '';
+                        let data = null;
+                        
+                        try {
+                            data = await response.json();
+                            html = data.contents || data.body || JSON.stringify(data);
+                        } catch (e) {
+                            html = await response.text();
+                        }
+                        
+                        console.log('获取到HTML内容，长度:', html.length);
+                        
+                        // 尝试从HTML中提取视频URL - 更多模式
+                        const patterns = [
+                            // 抖音/Doubao格式
+                            /playAddr["\s:]+["']([^"']+\.mp4[^"']*)["']/i,
+                            /play_addr["\s:]*\{[^}]*url_list["\s:]*\[["']([^"']+\.mp4[^"']*)["']/i,
+                            /"play_url":\s*"([^"]+\.mp4[^"]*)"/i,
+                            /video["\s:]+["']([^"']+\.mp4[^"']*)["']/i,
+                            /"video_url":\s*"([^"]+\.mp4[^"]*)"/i,
+                            /src=["']([^"']+\.mp4[^"']*)["']/i,
+                            // 通用格式
+                            /https?:\/\/[^"'\s]+\.mp4[^"'\s]*/gi,
+                            /https?:\/\/[^"'\s]*video[^"'\s]*\.mp4[^"'\s]*/gi,
+                            // JSON格式
+                            /url["\s:]+["']([^"']+\.mp4[^"']*)["']/i,
+                            /playUrl["\s:]+["']([^"']+\.mp4[^"']*)["']/i,
+                        ];
+                        
+                        for (let pattern of patterns) {
+                            const matches = html.match(pattern);
+                            if (matches) {
+                                let videoUrl = matches[1] || matches[0];
+                                videoUrl = videoUrl.replace(/\\u002F/g, '/').replace(/\\\//g, '/').replace(/\\/g, '');
+                                videoUrl = videoUrl.replace(/&amp;/g, '&');
+                                
+                                if (!videoUrl.startsWith('http')) {
+                                    videoUrl = 'https:' + videoUrl;
+                                }
+                                
+                                // 验证URL格式
+                                if (videoUrl.includes('.mp4') || videoUrl.includes('video')) {
+                                    console.log('找到视频URL:', videoUrl);
+                                    return videoUrl;
+                                }
+                            }
+                        }
+                        
+                        // 尝试提取JSON数据
+                        try {
+                            const jsonMatch = html.match(/\{[\s\S]*"video"[\s\S]*\}/);
+                            if (jsonMatch) {
+                                const jsonData = JSON.parse(jsonMatch[0]);
+                                const videoUrl = extractVideoFromJson(jsonData);
+                                if (videoUrl) {
+                                    console.log('从JSON提取到视频URL:', videoUrl);
+                                    return videoUrl;
+                                }
+                            }
+                        } catch (e) {
+                            console.log('JSON解析失败');
+                        }
+                    }
+                } catch (e) {
+                    console.log('代理请求失败:', e.message);
+                    continue;
+                }
+            }
+
+            // 方法2：尝试使用公开的API服务
             try {
-                // 使用免费的抖音视频解析API
                 const apiUrls = [
                     `https://api.douyin.wtf/api?url=${encodeURIComponent(url)}`,
-                    `https://www.iesdouyin.com/aweme/v1/web/aweme/detail/?aweme_id=${videoId}`,
+                    `https://douyin.wtf/api?url=${encodeURIComponent(url)}`,
                 ];
                 
                 for (let apiUrl of apiUrls) {
@@ -367,9 +439,7 @@
                         const response = await fetch(apiUrl, {
                             method: 'GET',
                             headers: {
-                                'Accept': 'application/json, text/plain, */*',
-                                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
-                                'Referer': 'https://www.doubao.com/'
+                                'Accept': 'application/json',
                             }
                         });
                         
@@ -377,99 +447,58 @@
                             const data = await response.json();
                             console.log('API响应:', data);
                             
-                            // 尝试从不同格式的响应中提取视频URL
-                            let videoUrl = null;
-                            
-                            // 格式1: { data: { video: { play_addr: { url_list: [...] } } } }
-                            if (data.data && data.data.video && data.data.video.play_addr) {
-                                const urlList = data.data.video.play_addr.url_list;
-                                if (urlList && urlList.length > 0) {
-                                    videoUrl = urlList[0];
-                                }
-                            }
-                            
-                            // 格式1.1: { aweme_detail: { video: { play_addr: { url_list: [...] } } } }
-                            if (!videoUrl && data.aweme_detail && data.aweme_detail.video && data.aweme_detail.video.play_addr) {
-                                const urlList = data.aweme_detail.video.play_addr.url_list;
-                                if (urlList && urlList.length > 0) {
-                                    videoUrl = urlList[0];
-                                }
-                            }
-                            
-                            // 格式2: { video_url: "..." }
-                            if (!videoUrl && data.video_url) {
-                                videoUrl = data.video_url;
-                            }
-                            
-                            // 格式3: { data: { play: "..." } }
-                            if (!videoUrl && data.data && data.data.play) {
-                                videoUrl = data.data.play;
-                            }
-                            
-                            // 格式4: { url: "..." }
-                            if (!videoUrl && data.url) {
-                                videoUrl = data.url;
-                            }
-                            
-                            // 格式5: 从JSON字符串中解析
-                            if (!videoUrl && data.play_url) {
-                                videoUrl = data.play_url;
-                            }
-                            
-                            // 格式6: 嵌套在data中
-                            if (!videoUrl && data.data && data.data.url) {
-                                videoUrl = data.data.url;
-                            }
-                            
+                            const videoUrl = extractVideoFromJson(data);
                             if (videoUrl) {
-                                // 清理URL
-                                videoUrl = videoUrl.replace(/\\u002F/g, '/').replace(/\\\//g, '/').replace(/\\/g, '');
-                                if (!videoUrl.startsWith('http')) {
-                                    videoUrl = 'https:' + videoUrl;
-                                }
                                 return videoUrl;
                             }
                         }
                     } catch (e) {
-                        console.log('API请求失败，尝试下一个:', e);
+                        console.log('API请求失败:', e.message);
                         continue;
                     }
                 }
             } catch (e) {
-                console.log('API方法全部失败:', e);
+                console.log('API方法失败:', e);
             }
+            
+            return null;
+        }
 
-            // 方法2：尝试使用CORS代理获取页面内容
-            try {
-                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-                const response = await fetch(proxyUrl);
-                const data = await response.json();
-                
-                if (data.contents) {
-                    const html = data.contents;
-                    
-                    // 尝试从HTML中提取视频URL
-                    const patterns = [
-                        /playAddr["\s:]+["']([^"']+)["']/i,
-                        /video["\s:]+["']([^"']+)["']/i,
-                        /src=["']([^"']*\.mp4[^"']*)["']/i,
-                        /url["\s:]+["']([^"']*\.mp4[^"']*)["']/i,
-                        /"play_addr":\s*\{[^}]*"url_list":\s*\["([^"]+)"/i
-                    ];
-                    
-                    for (let pattern of patterns) {
-                        const match = html.match(pattern);
-                        if (match && match[1]) {
-                            let videoUrl = match[1].replace(/\\u002F/g, '/').replace(/\\\//g, '/');
-                            if (!videoUrl.startsWith('http')) {
-                                videoUrl = 'https:' + videoUrl;
-                            }
-                            return videoUrl;
-                        }
+        // 从JSON对象中提取视频URL
+        function extractVideoFromJson(data) {
+            if (!data) return null;
+            
+            // 尝试多种JSON结构
+            const paths = [
+                ['data', 'video', 'play_addr', 'url_list', 0],
+                ['aweme_detail', 'video', 'play_addr', 'url_list', 0],
+                ['data', 'play'],
+                ['data', 'url'],
+                ['video_url'],
+                ['play_url'],
+                ['url'],
+                ['data', 'video_url'],
+                ['result', 'video', 'play_addr', 'url_list', 0],
+            ];
+            
+            for (let path of paths) {
+                let value = data;
+                for (let key of path) {
+                    if (value && typeof value === 'object' && key in value) {
+                        value = value[key];
+                    } else {
+                        value = null;
+                        break;
                     }
                 }
-            } catch (e) {
-                console.log('代理方法失败:', e);
+                
+                if (value && typeof value === 'string' && (value.includes('.mp4') || value.includes('video'))) {
+                    let videoUrl = value.replace(/\\u002F/g, '/').replace(/\\\//g, '/').replace(/\\/g, '');
+                    if (!videoUrl.startsWith('http')) {
+                        videoUrl = 'https:' + videoUrl;
+                    }
+                    return videoUrl;
+                }
             }
             
             return null;
@@ -529,6 +558,9 @@
         // 显示视频
         function displayVideo(src) {
             videoUrl = src;
+            // 隐藏iframe，显示video
+            document.getElementById('videoFrame').style.display = 'none';
+            videoElement.style.display = 'block';
             videoElement.src = src;
             videoElement.load();
             document.getElementById('videoContainer').classList.add('active');
@@ -541,6 +573,31 @@
             
             // 确保视频可以长按保存（iOS）
             videoElement.setAttribute('controlslist', 'nodownload');
+        }
+
+        // 显示视频页面（备用方案 - 嵌入iframe）
+        function displayVideoPage(url) {
+            // 隐藏video，显示iframe
+            videoElement.style.display = 'none';
+            const iframe = document.getElementById('videoFrame');
+            iframe.style.display = 'block';
+            iframe.src = url;
+            
+            document.getElementById('videoContainer').classList.add('active');
+            document.getElementById('downloadBtn').style.display = 'none';
+            document.getElementById('fetchBtn').disabled = false;
+            
+            showStatus('✅ 视频页面已加载！请在视频上长按选择"存储视频"保存到相册', 'success');
+            
+            // 添加说明
+            setTimeout(() => {
+                document.getElementById('downloadHint').style.display = 'block';
+                document.getElementById('downloadHint').innerHTML = 
+                    '<strong>💡 保存方法：</strong><br>' +
+                    '1️⃣ 在下方视频播放器中找到视频<br>' +
+                    '2️⃣ 在视频上长按<br>' +
+                    '3️⃣ 选择"存储视频"或"保存视频"即可保存到相册';
+            }, 1000);
         }
 
         // 下载视频
@@ -729,9 +786,12 @@
             document.getElementById('status').className = 'status';
             document.getElementById('downloadHint').style.display = 'none';
             document.getElementById('downloadBtn').style.display = 'none';
+            document.getElementById('videoFrame').style.display = 'none';
+            document.getElementById('videoFrame').src = '';
             videoUrl = '';
             if (videoElement) {
                 videoElement.src = '';
+                videoElement.style.display = 'block';
                 videoElement.removeAttribute('data-video-url');
             }
         }
