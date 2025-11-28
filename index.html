@@ -237,12 +237,11 @@
             <video id="videoPlayer" controls playsinline webkit-playsinline></video>
             <iframe id="videoFrame" style="display: none; width: 100%; min-height: 500px; height: 70vh; max-height: 800px; border: none; border-radius: 8px; background: #000;"></iframe>
             <div class="button-group" style="margin-top: 15px;">
-                <button id="downloadBtn" onclick="downloadVideo()" style="display: none;">下载视频</button>
+                <button id="downloadBtn" onclick="downloadVideo()" style="display: none;">💾 保存视频到相册</button>
             </div>
             <div class="download-hint" id="downloadHint" style="display: none;">
                 <strong>💡 保存方法：</strong><br>
-                1️⃣ 点击"下载视频"按钮，然后在视频上长按选择"存储视频"<br>
-                2️⃣ 或者直接在视频播放器上长按选择"存储视频"
+                点击上方"保存视频到相册"按钮，然后在弹出的分享菜单中选择"存储视频"即可保存到相册
             </div>
         </div>
 
@@ -251,9 +250,14 @@
             <ul>
                 <li>粘贴抖音视频分享链接到上方输入框</li>
                 <li>点击"获取视频"按钮等待视频加载</li>
-                <li><strong>iPhone用户：</strong>点击"下载视频"按钮后，在视频上长按选择"存储视频"即可保存到相册</li>
-                <li><strong>其他设备：</strong>点击"下载视频"按钮即可自动下载</li>
-                <li>如果自动下载失败，可以直接长按视频选择保存</li>
+                <li><strong>iPhone用户保存方法：</strong>
+                    <ol style="margin-left: 20px; margin-top: 5px;">
+                        <li>点击"💾 保存视频到相册"按钮</li>
+                        <li>在弹出的分享菜单中选择"存储视频"</li>
+                        <li>如果没有弹出菜单，点击视频播放器右下角的"分享"按钮</li>
+                    </ol>
+                </li>
+                <li><strong>其他设备：</strong>点击"💾 保存视频到相册"按钮即可自动下载</li>
             </ul>
         </div>
     </div>
@@ -274,9 +278,28 @@
             });
 
             // 监听视频加载完成
-            videoElement.addEventListener('loadeddata', function() {
+            videoElement.addEventListener('loadeddata', async function() {
                 showStatus('视频加载成功！', 'success');
                 document.getElementById('downloadHint').style.display = 'block';
+                
+                // 如果是iOS设备，预先将视频转换为blob，以便后续保存
+                const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+                if (isIOS && videoElement.src && !videoElement.src.startsWith('blob:')) {
+                    // 在后台准备blob URL（不阻塞UI）
+                    setTimeout(async () => {
+                        try {
+                            const response = await fetch(videoElement.src);
+                            if (response.ok) {
+                                const blob = await response.blob();
+                                const blobUrl = URL.createObjectURL(blob);
+                                videoElement.setAttribute('data-video-url', blobUrl);
+                                console.log('视频已转换为blob URL，准备保存');
+                            }
+                        } catch (e) {
+                            console.log('预处理视频失败:', e);
+                        }
+                    }, 1000);
+                }
             });
 
             // 监听视频错误
@@ -571,8 +594,12 @@
             // 保存视频URL供下载使用
             videoElement.setAttribute('data-video-url', src);
             
-            // 确保视频可以长按保存（iOS）
-            videoElement.setAttribute('controlslist', 'nodownload');
+            // 移除controlslist限制，允许所有控制选项
+            videoElement.removeAttribute('controlslist');
+            
+            // 确保视频可以交互
+            videoElement.setAttribute('webkit-playsinline', 'true');
+            videoElement.setAttribute('playsinline', 'true');
         }
 
         // 显示视频页面（备用方案 - 嵌入iframe）
@@ -629,94 +656,156 @@
             }
         }
 
-        // iOS下载方法 - 使用blob方式
+        // iOS下载方法 - 使用Web Share API
         async function downloadVideoIOS(url) {
             try {
                 showStatus('正在下载视频，请稍候...', 'loading');
                 
                 // 检查是否已经是blob URL
+                let blob = null;
+                let blobUrl = null;
+                
                 if (url.startsWith('blob:')) {
-                    showStatus('视频已准备好！请在视频上长按选择"存储视频"', 'success');
-                    document.getElementById('downloadBtn').disabled = false;
-                    return;
-                }
-                
-                // 使用fetch获取视频数据
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                        'Referer': 'https://www.doubao.com/',
-                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15'
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error('获取视频失败，请检查网络连接');
-                }
-                
-                showStatus('正在处理视频数据...', 'loading');
-                
-                // 转换为blob
-                const blob = await response.blob();
-                const blobUrl = URL.createObjectURL(blob);
-                
-                // 更新video元素的src为blob URL，这样用户可以长按保存
-                const originalSrc = videoElement.src;
-                videoElement.src = blobUrl;
-                videoElement.load();
-                videoElement.setAttribute('data-video-url', blobUrl);
-                
-                showStatus('✅ 视频已准备好下载！', 'success');
-                
-                // 等待视频加载
-                videoElement.addEventListener('loadeddata', function onLoaded() {
-                    videoElement.removeEventListener('loadeddata', onLoaded);
+                    // 如果已经是blob URL，尝试从中获取blob
+                    blobUrl = url;
+                } else {
+                    // 使用fetch获取视频数据
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        headers: {
+                            'Referer': 'https://www.doubao.com/',
+                            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15'
+                        }
+                    });
                     
-                    // 方法1: 尝试使用Web Share API（iOS 12.2+支持分享文件）
-                    if (navigator.share) {
+                    if (!response.ok) {
+                        throw new Error('获取视频失败，请检查网络连接');
+                    }
+                    
+                    showStatus('正在处理视频数据...', 'loading');
+                    
+                    // 转换为blob
+                    blob = await response.blob();
+                    blobUrl = URL.createObjectURL(blob);
+                    
+                    // 更新video元素的src为blob URL
+                    videoElement.src = blobUrl;
+                    videoElement.load();
+                    videoElement.setAttribute('data-video-url', blobUrl);
+                }
+                
+                // 如果还没有blob对象，从blob URL或当前视频源获取
+                if (!blob) {
+                    try {
+                        // 尝试从blob URL获取
+                        if (blobUrl) {
+                            const response = await fetch(blobUrl);
+                            blob = await response.blob();
+                        } 
+                        // 如果还是失败，尝试从video元素的src获取
+                        if (!blob && videoElement.src && videoElement.src.startsWith('blob:')) {
+                            const response = await fetch(videoElement.src);
+                            blob = await response.blob();
+                        }
+                    } catch (e) {
+                        console.log('无法获取blob数据:', e);
+                    }
+                }
+                
+                showStatus('准备保存视频...', 'loading');
+                
+                // 方法1: 使用Web Share API直接保存到相册（最可靠的方法）
+                if (navigator.share) {
+                    if (blob) {
                         try {
-                            const file = new File([blob], 'douyin-video.mp4', { type: blob.type || 'video/mp4' });
+                            const file = new File([blob], 'douyin-video-' + Date.now() + '.mp4', { 
+                                type: blob.type || 'video/mp4' 
+                            });
                             
-                            // 尝试分享文件（可以直接保存到相册）
-                            setTimeout(async () => {
+                            // 检查是否可以分享文件
+                            if (navigator.canShare && navigator.canShare({ files: [file] })) {
                                 try {
-                                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                                        await navigator.share({
-                                            files: [file],
-                                            title: '抖音视频',
-                                            text: '保存到相册'
-                                        });
-                                        showStatus('✅ 视频已保存！', 'success');
+                                    await navigator.share({
+                                        files: [file],
+                                        title: '抖音视频',
+                                        text: '保存视频到相册'
+                                    });
+                                    showStatus('✅ 视频已保存到相册！', 'success');
+                                    document.getElementById('downloadBtn').disabled = false;
+                                    return;
+                                } catch (shareError) {
+                                    if (shareError.name === 'AbortError') {
+                                        showStatus('已取消保存', 'error');
                                         document.getElementById('downloadBtn').disabled = false;
                                         return;
                                     }
-                                } catch (shareError) {
-                                    // 分享失败或用户取消，继续使用其他方法
-                                    console.log('分享API不可用:', shareError);
+                                    console.log('分享失败:', shareError);
+                                    // 继续尝试其他方法
                                 }
-                            }, 300);
+                            } else {
+                                console.log('不支持分享文件');
+                            }
                         } catch (fileError) {
                             console.log('创建文件对象失败:', fileError);
                         }
                     }
                     
-                    // 方法2: 显示提示信息
-                    setTimeout(() => {
-                        showStatus('请在视频播放器上长按，然后选择"存储视频"保存到相册', 'success');
-                        document.getElementById('downloadBtn').disabled = false;
-                    }, 1000);
-                }, { once: true });
+                    // 尝试分享链接（作为备选）
+                    if (blobUrl || url) {
+                        try {
+                            await navigator.share({
+                                title: '抖音视频',
+                                text: '点击链接查看视频',
+                                url: blobUrl || url
+                            });
+                            showStatus('已分享视频链接', 'success');
+                            document.getElementById('downloadBtn').disabled = false;
+                            return;
+                        } catch (shareError) {
+                            if (shareError.name !== 'AbortError') {
+                                console.log('分享链接失败:', shareError);
+                            }
+                        }
+                    }
+                }
                 
-                // 如果视频加载失败，仍显示提示
-                videoElement.addEventListener('error', function onError() {
-                    videoElement.removeEventListener('error', onError);
-                    showStatus('视频加载失败，但您仍可以长按原视频保存', 'error');
-                    document.getElementById('downloadBtn').disabled = false;
-                }, { once: true });
+                // 方法2: 创建一个下载链接并尝试打开（iOS上可能无效，但试试）
+                if (blobUrl || url) {
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = blobUrl || url;
+                    downloadLink.download = 'douyin-video-' + Date.now() + '.mp4';
+                    downloadLink.style.position = 'fixed';
+                    downloadLink.style.top = '-1000px';
+                    downloadLink.style.left = '-1000px';
+                    document.body.appendChild(downloadLink);
+                    
+                    setTimeout(() => {
+                        try {
+                            downloadLink.click();
+                        } catch (e) {
+                            console.log('下载链接点击失败:', e);
+                        }
+                        
+                        setTimeout(() => {
+                            document.body.removeChild(downloadLink);
+                        }, 500);
+                    }, 100);
+                }
+                
+                // 方法3: 显示详细说明
+                showStatus('请按照下方提示保存视频', 'success');
+                document.getElementById('downloadHint').innerHTML = 
+                    '<strong>💡 保存方法：</strong><br>' +
+                    '<strong>方法1（推荐）：</strong>如果刚才弹出了分享菜单，选择"存储视频"即可保存<br>' +
+                    '<strong>方法2：</strong>点击视频播放器右下角的"分享"按钮（方框+向上箭头图标）→ 选择"存储视频"<br>' +
+                    '<strong>方法3：</strong>在视频播放区域长按，看是否出现"存储视频"选项';
+                document.getElementById('downloadHint').style.display = 'block';
+                
+                document.getElementById('downloadBtn').disabled = false;
                 
             } catch (error) {
                 console.error('iOS下载错误:', error);
-                showStatus('自动下载失败：' + error.message + '。请直接在视频上长按选择"存储视频"', 'error');
+                showStatus('下载失败：' + error.message + '。请尝试其他保存方法', 'error');
                 document.getElementById('downloadBtn').disabled = false;
             }
         }
