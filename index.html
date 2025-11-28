@@ -188,11 +188,13 @@
             text-align: center;
             color: #1976d2;
             font-size: 14px;
-            display: none;
+            line-height: 1.8;
+            border: 1px solid #90caf9;
         }
 
-        .download-hint.active {
-            display: block;
+        .download-hint strong {
+            color: #1565c0;
+            font-weight: 600;
         }
 
         @media (max-width: 480px) {
@@ -231,19 +233,21 @@
             <div class="button-group" style="margin-top: 15px;">
                 <button id="downloadBtn" onclick="downloadVideo()" style="display: none;">下载视频</button>
             </div>
-            <div class="download-hint" id="downloadHint">
-                💡 在视频上长按，选择"存储视频"即可保存到相册<br>
-                或者点击上方的"下载视频"按钮
+            <div class="download-hint" id="downloadHint" style="display: none;">
+                <strong>💡 保存方法：</strong><br>
+                1️⃣ 点击"下载视频"按钮，然后在视频上长按选择"存储视频"<br>
+                2️⃣ 或者直接在视频播放器上长按选择"存储视频"
             </div>
         </div>
 
         <div class="tips">
-            <h3>使用说明：</h3>
+            <h3>📖 使用说明：</h3>
             <ul>
                 <li>粘贴抖音视频分享链接到上方输入框</li>
-                <li>点击"获取视频"按钮</li>
-                <li>视频加载后，长按视频选择"存储视频"保存到相册</li>
-                <li>或者点击视频播放后，在控制栏中点击下载图标</li>
+                <li>点击"获取视频"按钮等待视频加载</li>
+                <li><strong>iPhone用户：</strong>点击"下载视频"按钮后，在视频上长按选择"存储视频"即可保存到相册</li>
+                <li><strong>其他设备：</strong>点击"下载视频"按钮即可自动下载</li>
+                <li>如果自动下载失败，可以直接长按视频选择保存</li>
             </ul>
         </div>
     </div>
@@ -266,7 +270,7 @@
             // 监听视频加载完成
             videoElement.addEventListener('loadeddata', function() {
                 showStatus('视频加载成功！', 'success');
-                document.getElementById('downloadHint').classList.add('active');
+                document.getElementById('downloadHint').style.display = 'block';
             });
 
             // 监听视频错误
@@ -529,21 +533,25 @@
             videoElement.load();
             document.getElementById('videoContainer').classList.add('active');
             document.getElementById('downloadBtn').style.display = 'block';
+            document.getElementById('downloadHint').style.display = 'block';
             document.getElementById('fetchBtn').disabled = false;
             
             // 保存视频URL供下载使用
             videoElement.setAttribute('data-video-url', src);
+            
+            // 确保视频可以长按保存（iOS）
+            videoElement.setAttribute('controlslist', 'nodownload');
         }
 
         // 下载视频
         async function downloadVideo() {
-            const url = videoElement.getAttribute('data-video-url') || videoElement.src;
-            if (!url) {
+            let url = videoElement.getAttribute('data-video-url') || videoElement.src;
+            if (!url || url === '') {
                 showStatus('没有可下载的视频', 'error');
                 return;
             }
 
-            showStatus('正在下载视频，请稍候...', 'loading');
+            showStatus('正在准备下载，请稍候...', 'loading');
             document.getElementById('downloadBtn').disabled = true;
 
             try {
@@ -552,52 +560,106 @@
                 
                 if (isIOS) {
                     // iOS设备使用特殊方法
-                    downloadVideoIOS(url);
+                    await downloadVideoIOS(url);
                 } else {
                     // 其他设备使用标准下载方法
                     await downloadVideoStandard(url);
                 }
             } catch (error) {
                 console.error('下载失败:', error);
-                showStatus('下载失败：' + error.message, 'error');
+                showStatus('下载失败：' + (error.message || '未知错误'), 'error');
                 document.getElementById('downloadBtn').disabled = false;
             }
         }
 
-        // iOS下载方法
-        function downloadVideoIOS(url) {
+        // iOS下载方法 - 使用blob方式
+        async function downloadVideoIOS(url) {
             try {
-                // 方法1：创建隐藏的iframe来触发下载
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.src = url;
-                document.body.appendChild(iframe);
+                showStatus('正在下载视频，请稍候...', 'loading');
                 
-                // 方法2：创建a标签并尝试下载
-                const a = document.createElement('a');
-                a.href = url;
-                a.target = '_blank';
-                a.download = 'douyin-video.mp4';
-                a.rel = 'noopener noreferrer';
-                
-                // 触发点击
-                document.body.appendChild(a);
-                a.click();
-                
-                // 清理
-                setTimeout(() => {
-                    document.body.removeChild(a);
-                    document.body.removeChild(iframe);
-                    showStatus('正在下载...请在浏览器中确认下载', 'success');
+                // 检查是否已经是blob URL
+                if (url.startsWith('blob:')) {
+                    showStatus('视频已准备好！请在视频上长按选择"存储视频"', 'success');
                     document.getElementById('downloadBtn').disabled = false;
-                }, 1000);
+                    return;
+                }
                 
-                // iOS提示
-                setTimeout(() => {
-                    showStatus('如果下载未开始，请长按视频选择"存储视频"', 'success');
-                }, 2000);
+                // 使用fetch获取视频数据
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Referer': 'https://www.doubao.com/',
+                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('获取视频失败，请检查网络连接');
+                }
+                
+                showStatus('正在处理视频数据...', 'loading');
+                
+                // 转换为blob
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                
+                // 更新video元素的src为blob URL，这样用户可以长按保存
+                const originalSrc = videoElement.src;
+                videoElement.src = blobUrl;
+                videoElement.load();
+                videoElement.setAttribute('data-video-url', blobUrl);
+                
+                showStatus('✅ 视频已准备好下载！', 'success');
+                
+                // 等待视频加载
+                videoElement.addEventListener('loadeddata', function onLoaded() {
+                    videoElement.removeEventListener('loadeddata', onLoaded);
+                    
+                    // 方法1: 尝试使用Web Share API（iOS 12.2+支持分享文件）
+                    if (navigator.share) {
+                        try {
+                            const file = new File([blob], 'douyin-video.mp4', { type: blob.type || 'video/mp4' });
+                            
+                            // 尝试分享文件（可以直接保存到相册）
+                            setTimeout(async () => {
+                                try {
+                                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                                        await navigator.share({
+                                            files: [file],
+                                            title: '抖音视频',
+                                            text: '保存到相册'
+                                        });
+                                        showStatus('✅ 视频已保存！', 'success');
+                                        document.getElementById('downloadBtn').disabled = false;
+                                        return;
+                                    }
+                                } catch (shareError) {
+                                    // 分享失败或用户取消，继续使用其他方法
+                                    console.log('分享API不可用:', shareError);
+                                }
+                            }, 300);
+                        } catch (fileError) {
+                            console.log('创建文件对象失败:', fileError);
+                        }
+                    }
+                    
+                    // 方法2: 显示提示信息
+                    setTimeout(() => {
+                        showStatus('请在视频播放器上长按，然后选择"存储视频"保存到相册', 'success');
+                        document.getElementById('downloadBtn').disabled = false;
+                    }, 1000);
+                }, { once: true });
+                
+                // 如果视频加载失败，仍显示提示
+                videoElement.addEventListener('error', function onError() {
+                    videoElement.removeEventListener('error', onError);
+                    showStatus('视频加载失败，但您仍可以长按原视频保存', 'error');
+                    document.getElementById('downloadBtn').disabled = false;
+                }, { once: true });
+                
             } catch (error) {
-                showStatus('iOS下载需要手动操作：请长按视频选择"存储视频"', 'error');
+                console.error('iOS下载错误:', error);
+                showStatus('自动下载失败：' + error.message + '。请直接在视频上长按选择"存储视频"', 'error');
                 document.getElementById('downloadBtn').disabled = false;
             }
         }
@@ -605,6 +667,8 @@
         // 标准下载方法
         async function downloadVideoStandard(url) {
             try {
+                showStatus('正在下载视频...', 'loading');
+                
                 // 使用fetch获取视频并创建blob
                 const response = await fetch(url, {
                     method: 'GET',
@@ -615,7 +679,7 @@
                 });
                 
                 if (!response.ok) {
-                    throw new Error('获取视频数据失败');
+                    throw new Error('获取视频数据失败，状态码：' + response.status);
                 }
                 
                 const blob = await response.blob();
@@ -641,15 +705,18 @@
             } catch (error) {
                 // 如果fetch失败，尝试直接打开链接
                 console.log('Fetch失败，尝试直接下载:', error);
+                showStatus('使用备用下载方式...', 'loading');
+                
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = 'douyin-video.mp4';
                 a.target = '_blank';
                 document.body.appendChild(a);
                 a.click();
+                
                 setTimeout(() => {
                     document.body.removeChild(a);
-                    showStatus('请在新窗口保存视频', 'success');
+                    showStatus('已打开视频链接，请在新窗口保存', 'success');
                     document.getElementById('downloadBtn').disabled = false;
                 }, 1000);
             }
@@ -660,7 +727,7 @@
             document.getElementById('videoUrl').value = '';
             document.getElementById('videoContainer').classList.remove('active');
             document.getElementById('status').className = 'status';
-            document.getElementById('downloadHint').classList.remove('active');
+            document.getElementById('downloadHint').style.display = 'none';
             document.getElementById('downloadBtn').style.display = 'none';
             videoUrl = '';
             if (videoElement) {
